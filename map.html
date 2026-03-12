@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Fiber Mapping System</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+<style>
+
+body{
+margin:0;
+display:flex;
+height:100vh;
+font-family:Arial;
+}
+
+#sidebar{
+width:320px;
+background:#0f172a;
+color:white;
+overflow:auto;
+padding:15px;
+}
+
+#map{
+flex:1;
+}
+
+button{
+width:100%;
+padding:8px;
+margin:4px 0;
+border:none;
+background:#0ea5e9;
+color:white;
+cursor:pointer;
+}
+
+input{
+width:100%;
+padding:8px;
+margin-bottom:6px;
+}
+
+.pin{
+border-bottom:1px solid #334155;
+padding:6px;
+}
+
+.layer{
+border-bottom:1px solid #334155;
+padding:6px;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div id="sidebar">
+
+<h3>Fiber Map</h3>
+
+<input type="file" id="fileInput" accept=".xlsx,.xls,.kmz,.kml">
+
+<button onclick="exportKML()">Export KML</button>
+
+<button onclick="clearAll()">Clear All</button>
+
+<hr>
+
+<select id="basemap">
+<option value="street">Street</option>
+<option value="satellite">Satellite</option>
+</select>
+
+<hr>
+
+<h4>Layers</h4>
+
+<div id="layerList"></div>
+
+<hr>
+
+<input id="search" placeholder="Search pin">
+
+<div id="pinList"></div>
+
+</div>
+
+<div id="map"></div>
+
+<script>
+
+const params=new URLSearchParams(location.search)
+
+const viewerMode=params.get("viewer")==="1"
+
+if(viewerMode){
+document.getElementById("fileInput").style.display="none"
+}
+
+let map=L.map("map").setView([9.75,124.25],9)
+
+let street=L.tileLayer(
+"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+{maxZoom:19}
+)
+
+let satellite=L.tileLayer(
+"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+{maxZoom:19}
+)
+
+street.addTo(map)
+
+document.getElementById("basemap").onchange=function(){
+
+if(this.value==="satellite"){
+map.removeLayer(street)
+satellite.addTo(map)
+}else{
+map.removeLayer(satellite)
+street.addTo(map)
+}
+
+}
+
+let layers={}
+let pins=[]
+
+function createLayer(name){
+
+if(layers[name]) return
+
+let cluster=L.markerClusterGroup()
+
+layers[name]=cluster
+
+map.addLayer(cluster)
+
+renderLayers()
+
+}
+
+function renderLayers(){
+
+let box=document.getElementById("layerList")
+
+box.innerHTML=""
+
+for(let l in layers){
+
+let div=document.createElement("div")
+
+div.className="layer"
+
+div.innerHTML=`
+<input type="checkbox" checked onchange="toggleLayer('${l}',this.checked)">
+${l}
+`
+
+box.appendChild(div)
+
+}
+
+}
+
+function toggleLayer(name,state){
+
+if(state) map.addLayer(layers[name])
+else map.removeLayer(layers[name])
+
+}
+
+function addPin(layer,name,lat,lng){
+
+if(isNaN(lat)||isNaN(lng)) return
+
+let marker=L.marker([lat,lng])
+
+marker.bindPopup(`<b>${name}</b><br>${lat},${lng}`)
+
+if(!viewerMode){
+
+marker.on("contextmenu",function(){
+
+if(confirm("Delete pin?")){
+
+layers[layer].removeLayer(marker)
+
+pins=pins.filter(p=>p.marker!==marker)
+
+renderPins()
+
+}
+
+})
+
+}
+
+layers[layer].addLayer(marker)
+
+pins.push({layer,name,lat,lng,marker})
+
+renderPins()
+
+}
+
+function renderPins(){
+
+let list=document.getElementById("pinList")
+
+list.innerHTML=""
+
+pins.forEach((p,i)=>{
+
+let div=document.createElement("div")
+
+div.className="pin"
+
+div.innerHTML=`
+<b>${p.name}</b><br>
+${p.lat}, ${p.lng}
+<button onclick="zoomPin(${i})">Zoom</button>
+`
+
+if(!viewerMode){
+
+div.innerHTML+=`
+<button onclick="editPin(${i})">Edit</button>
+<button onclick="deletePin(${i})">Delete</button>
+`
+
+}
+
+list.appendChild(div)
+
+})
+
+}
+
+function zoomPin(i){
+
+let p=pins[i]
+
+map.setView([p.lat,p.lng],16)
+
+p.marker.openPopup()
+
+}
+
+function editPin(i){
+
+let name=prompt("Edit name",pins[i].name)
+
+if(!name) return
+
+pins[i].name=name
+
+pins[i].marker.setPopupContent(`<b>${name}</b><br>${pins[i].lat},${pins[i].lng}`)
+
+renderPins()
+
+}
+
+function deletePin(i){
+
+let p=pins[i]
+
+layers[p.layer].removeLayer(p.marker)
+
+pins.splice(i,1)
+
+renderPins()
+
+}
+
+function clearAll(){
+
+for(let l in layers){
+
+layers[l].clearLayers()
+
+}
+
+pins=[]
+
+renderPins()
+
+}
+
+document.getElementById("search").oninput=function(){
+
+let v=this.value.toLowerCase()
+
+document.querySelectorAll(".pin").forEach(p=>{
+
+p.style.display=p.innerText.toLowerCase().includes(v)
+?"block":"none"
+
+})
+
+}
+
+document.getElementById("fileInput").addEventListener("change",async e=>{
+
+let file=e.target.files[0]
+
+if(!file) return
+
+let layer=file.name
+
+createLayer(layer)
+
+if(file.name.endsWith(".xlsx")||file.name.endsWith(".xls"))
+parseExcel(file,layer)
+
+else if(file.name.endsWith(".kmz"))
+parseKMZ(file,layer)
+
+else if(file.name.endsWith(".kml"))
+parseKML(await file.text(),layer)
+
+})
+
+function parseExcel(file,layer){
+
+let reader=new FileReader()
+
+reader.onload=e=>{
+
+let data=new Uint8Array(e.target.result)
+
+let wb=XLSX.read(data,{type:"array"})
+
+let sheet=wb.Sheets[wb.SheetNames[0]]
+
+let rows=XLSX.utils.sheet_to_json(sheet)
+
+rows.forEach(r=>{
+
+let name=r.name||r.Name||"Pin"
+
+let lat=parseFloat(r.latitude||r.lat||r.Lat||r.Latitude)
+
+let lng=parseFloat(r.longitude||r.lng||r.Lng||r.Longitude)
+
+addPin(layer,name,lat,lng)
+
+})
+
+autoZoom()
+
+}
+
+reader.readAsArrayBuffer(file)
+
+}
+
+async function parseKMZ(file,layer){
+
+let zip=await JSZip.loadAsync(file)
+
+let kmlFile=null
+
+zip.forEach((p,e)=>{
+
+if(p.endsWith(".kml")) kmlFile=e
+
+})
+
+if(!kmlFile){
+alert("No KML inside KMZ")
+return
+}
+
+let text=await kmlFile.async("text")
+
+parseKML(text,layer)
+
+}
+
+function parseKML(text,layer){
+
+let xml=new DOMParser().parseFromString(text,"text/xml")
+
+let pm=xml.getElementsByTagName("Placemark")
+
+for(let p of pm){
+
+let name=p.getElementsByTagName("name")[0]?.textContent||"Pin"
+
+let coord=p.getElementsByTagName("coordinates")[0]?.textContent
+
+if(!coord) continue
+
+let [lng,lat]=coord.trim().split(",")
+
+lat=parseFloat(lat)
+lng=parseFloat(lng)
+
+addPin(layer,name,lat,lng)
+
+}
+
+autoZoom()
+
+}
+
+function autoZoom(){
+
+if(pins.length===0) return
+
+let group=new L.featureGroup(pins.map(p=>p.marker))
+
+map.fitBounds(group.getBounds())
+
+}
+
+function exportKML(){
+
+let kml='<?xml version="1.0"?><kml><Document>'
+
+pins.forEach(p=>{
+
+kml+=`
+<Placemark>
+<name>${p.name}</name>
+<Point>
+<coordinates>${p.lng},${p.lat},0</coordinates>
+</Point>
+</Placemark>
+`
+
+})
+
+kml+='</Document></kml>'
+
+let blob=new Blob([kml],{type:"text/xml"})
+
+let a=document.createElement("a")
+
+a.href=URL.createObjectURL(blob)
+
+a.download="fiber-map.kml"
+
+a.click()
+
+}
+
+map.on("contextmenu",function(e){
+
+if(viewerMode) return
+
+let name=prompt("Pin name")
+
+if(!name) return
+
+createLayer("Manual Pins")
+
+addPin("Manual Pins",name,e.latlng.lat,e.latlng.lng)
+
+})
+
+</script>
+
+</body>
+</html>
