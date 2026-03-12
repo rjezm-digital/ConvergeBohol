@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Fiber Mapping System</title>
+<title>Ultimate Fiber Map</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
@@ -38,12 +38,12 @@ width:100%;
 padding:8px;
 margin:4px 0;
 border:none;
-background:#0ea5e9;
+background:#0284c7;
 color:white;
 cursor:pointer;
 }
 
-input{
+input,select{
 width:100%;
 padding:8px;
 margin-bottom:6px;
@@ -100,9 +100,9 @@ padding:6px;
 
 <script>
 
-const params=new URLSearchParams(location.search)
+const STORAGE_KEY="fiberMapPins"
 
-const viewerMode=params.get("viewer")==="1"
+const viewerMode=new URLSearchParams(location.search).get("viewer")==="1"
 
 if(viewerMode){
 document.getElementById("fileInput").style.display="none"
@@ -185,6 +185,8 @@ function addPin(layer,name,lat,lng){
 
 if(isNaN(lat)||isNaN(lng)) return
 
+createLayer(layer)
+
 let marker=L.marker([lat,lng])
 
 marker.bindPopup(`<b>${name}</b><br>${lat},${lng}`)
@@ -199,6 +201,8 @@ layers[layer].removeLayer(marker)
 
 pins=pins.filter(p=>p.marker!==marker)
 
+saveData()
+
 renderPins()
 
 }
@@ -210,6 +214,8 @@ renderPins()
 layers[layer].addLayer(marker)
 
 pins.push({layer,name,lat,lng,marker})
+
+saveData()
 
 renderPins()
 
@@ -268,6 +274,8 @@ pins[i].name=name
 
 pins[i].marker.setPopupContent(`<b>${name}</b><br>${pins[i].lat},${pins[i].lng}`)
 
+saveData()
+
 renderPins()
 
 }
@@ -279,6 +287,8 @@ let p=pins[i]
 layers[p.layer].removeLayer(p.marker)
 
 pins.splice(i,1)
+
+saveData()
 
 renderPins()
 
@@ -293,6 +303,8 @@ layers[l].clearLayers()
 }
 
 pins=[]
+
+localStorage.removeItem(STORAGE_KEY)
 
 renderPins()
 
@@ -318,8 +330,6 @@ let file=e.target.files[0]
 if(!file) return
 
 let layer=file.name
-
-createLayer(layer)
 
 if(file.name.endsWith(".xlsx")||file.name.endsWith(".xls"))
 parseExcel(file,layer)
@@ -426,6 +436,35 @@ map.fitBounds(group.getBounds())
 
 }
 
+function saveData(){
+
+let data=pins.map(p=>({
+layer:p.layer,
+name:p.name,
+lat:p.lat,
+lng:p.lng
+}))
+
+localStorage.setItem(STORAGE_KEY,JSON.stringify(data))
+
+}
+
+function loadSavedPins(){
+
+let data=localStorage.getItem(STORAGE_KEY)
+
+if(!data) return
+
+let saved=JSON.parse(data)
+
+saved.forEach(p=>{
+
+addPin(p.layer,p.name,p.lat,p.lng)
+
+})
+
+}
+
 function exportKML(){
 
 let kml='<?xml version="1.0"?><kml><Document>'
@@ -465,11 +504,11 @@ let name=prompt("Pin name")
 
 if(!name) return
 
-createLayer("Manual Pins")
-
 addPin("Manual Pins",name,e.latlng.lat,e.latlng.lng)
 
 })
+
+loadSavedPins()
 
 </script>
 
