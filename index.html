@@ -65,6 +65,7 @@ padding:6px
 
 <button onclick="generateShare()">Generate Share Link</button>
 <button onclick="addNAP()">Add NAP</button>
+<button onclick="exportJSON()">Export JSON</button>
 <button onclick="exportKML()">Export KML</button>
 <button onclick="clearMap()">Clear Map</button>
 
@@ -123,7 +124,7 @@ function pinExists(lat,lng){
 return pins.some(p=>p.lat===lat && p.lng===lng)
 }
 
-/* ADD HOUSE */
+/* ADD HOUSE PIN */
 
 map.on("contextmenu",e=>{
 
@@ -204,7 +205,7 @@ document.getElementById("napStats").innerHTML=html
 
 }
 
-/* SAVE */
+/* SAVE LOCAL */
 
 function save(){
 
@@ -215,7 +216,7 @@ JSON.stringify({pins,naps})
 
 }
 
-/* LOAD */
+/* LOAD LOCAL */
 
 function load(){
 
@@ -242,26 +243,26 @@ updateNAP()
 
 load()
 
-/* SHARE */
+/* EXPORT JSON */
 
-function generateShare(){
+function exportJSON(){
 
 let data={pins,naps}
 
-let encoded=encodeURIComponent(
-btoa(JSON.stringify(data))
+let blob=new Blob(
+[JSON.stringify(data,null,2)],
+{type:"application/json"}
 )
 
-let url=
-location.origin+
-location.pathname.replace("index.html","")+
-"view.html?data="+encoded
+let a=document.createElement("a")
 
-document.getElementById("shareLink").value=url
+a.href=URL.createObjectURL(blob)
+a.download="data.json"
+a.click()
 
 }
 
-/* EXPORT */
+/* EXPORT KML */
 
 function exportKML(){
 
@@ -292,6 +293,25 @@ a.click()
 function clearMap(){
 localStorage.removeItem(STORAGE)
 location.reload()
+}
+
+/* SHARE LINK */
+
+function generateShare(){
+
+let data={pins,naps}
+
+let encoded=encodeURIComponent(
+btoa(JSON.stringify(data))
+)
+
+let url=
+location.origin+
+location.pathname.replace("index.html","")+
+"view.html?data="+encoded
+
+document.getElementById("shareLink").value=url
+
 }
 
 /* FILE IMPORT */
