@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Fiber Planner Ultimate</title>
+<title>Fiber Planner</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -11,61 +11,13 @@
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
 <style>
-
-body{
-margin:0;
-display:flex;
-height:100vh;
-font-family:Arial;
-}
-
-#sidebar{
-width:350px;
-background:#0f172a;
-color:white;
-padding:12px;
-overflow:auto;
-}
-
-#map{
-flex:1;
-padding-bottom:28px;
-}
-
-button{
-width:100%;
-padding:8px;
-margin:4px 0;
-background:#0284c7;
-color:white;
-border:none;
-cursor:pointer;
-}
-
-input{
-width:100%;
-padding:8px;
-margin-bottom:6px;
-}
-
-#footer{
-position:fixed;
-bottom:0;
-left:0;
-width:100%;
-background:#0f172a;
-color:#94a3b8;
-text-align:center;
-font-size:12px;
-padding:6px;
-border-top:1px solid #334155;
-}
-
-.warning{
-color:#ff4444;
-font-weight:bold;
-}
-
+body{margin:0;display:flex;height:100vh;font-family:Arial}
+#sidebar{width:350px;background:#0f172a;color:white;padding:12px;overflow:auto}
+#map{flex:1;padding-bottom:28px}
+button{width:100%;padding:8px;margin:4px 0;background:#0284c7;color:white;border:none}
+input{width:100%;padding:8px;margin-bottom:6px}
+#footer{position:fixed;bottom:0;left:0;width:100%;background:#0f172a;color:#94a3b8;text-align:center;font-size:12px;padding:6px;border-top:1px solid #334155}
+.warning{color:#ff4444;font-weight:bold}
 </style>
 </head>
 
@@ -85,6 +37,8 @@ font-weight:bold;
 
 <button onclick="exportKML()">Export KML</button>
 
+<button onclick="clearMap()">Clear Map</button>
+
 <hr>
 
 <input id="shareLink" placeholder="Share link appears here">
@@ -101,18 +55,15 @@ Fiber Planner • By Randy Tadlas
 
 <script>
 
-/* VIEWER MODE */
+/* STORAGE */
 
-const params = new URLSearchParams(location.search)
-const viewer = params.get("viewer")==="1"
+const STORAGE_KEY="fiber_planner_data"
 
 /* MAP */
 
 let map=L.map("map",{preferCanvas:true}).setView([9.75,124.25],9)
 
-L.tileLayer(
-"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-).addTo(map)
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map)
 
 /* ICONS */
 
@@ -135,20 +86,26 @@ House:icon("green")
 let pins=[]
 let naps=[]
 
+/* DUPLICATE CHECK */
+
+function pinExists(lat,lng){
+return pins.some(p=>p.lat===lat && p.lng===lng)
+}
+
 /* ADD HOUSE */
 
 map.on("contextmenu",e=>{
 
-if(viewer) return
+let lat=e.latlng.lat
+let lng=e.latlng.lng
 
-let marker=L.marker(e.latlng,{icon:icons.House}).addTo(map)
+if(pinExists(lat,lng)) return
 
-pins.push({
-type:"house",
-lat:e.latlng.lat,
-lng:e.latlng.lng
-})
+L.marker(e.latlng,{icon:icons.House}).addTo(map)
 
+pins.push({lat,lng,type:"house"})
+
+saveMap()
 updateNAPStats()
 
 })
@@ -157,29 +114,22 @@ updateNAPStats()
 
 function addNAP(){
 
-if(viewer) return
-
 map.once("click",e=>{
 
-let name=prompt("NAP Name","NAP")
+let name=prompt("NAP name","NAP")
 
-let cap=parseInt(prompt("Capacity (8 / 16 / 24 / 32)",16))
+let cap=parseInt(prompt("Capacity",16))
 
-let marker=L.marker(e.latlng,{icon:icons.NAP}).addTo(map)
+let lat=e.latlng.lat
+let lng=e.latlng.lng
 
-let circle=L.circle(e.latlng,{
-radius:200,
-color:"red"
-}).addTo(map)
+L.marker(e.latlng,{icon:icons.NAP}).addTo(map)
 
-naps.push({
-name:name,
-lat:e.latlng.lat,
-lng:e.latlng.lng,
-capacity:cap,
-radius:200
-})
+L.circle(e.latlng,{radius:200,color:"red"}).addTo(map)
 
+naps.push({name,lat,lng,capacity:cap,radius:200})
+
+saveMap()
 updateNAPStats()
 
 })
@@ -198,10 +148,7 @@ let count=0
 
 pins.forEach(p=>{
 
-let d=map.distance(
-[n.lat,n.lng],
-[p.lat,p.lng]
-)
+let d=map.distance([n.lat,n.lng],[p.lat,p.lng])
 
 if(d<=n.radius) count++
 
@@ -226,8 +173,6 @@ document.getElementById("napStats").innerHTML=html
 
 function enableRoute(){
 
-if(viewer) return
-
 alert("Click start then end")
 
 map.once("click",start=>{
@@ -244,10 +189,6 @@ let route=data.routes[0].geometry
 
 L.geoJSON(route,{color:"orange"}).addTo(map)
 
-let dist=(data.routes[0].distance/1000).toFixed(2)
-
-alert("Fiber distance "+dist+" km")
-
 })
 
 })
@@ -256,84 +197,68 @@ alert("Fiber distance "+dist+" km")
 
 }
 
-/* SHARE LINK */
+/* LOCAL STORAGE SAVE */
 
-function generateShare(){
+function saveMap(){
 
-let data={
-pins:pins,
-naps:naps
-}
-
-let encoded=btoa(JSON.stringify(data))
-
-let url=
-location.origin+
-location.pathname+
-"?viewer=1&data="+encoded
-
-document.getElementById("shareLink").value=url
+localStorage.setItem(
+STORAGE_KEY,
+JSON.stringify({pins,naps})
+)
 
 }
 
-/* LOAD SHARED MAP */
+/* LOAD STORAGE */
 
-if(params.get("data")){
+function loadMap(){
 
-let decoded=JSON.parse(atob(params.get("data")))
+let data=localStorage.getItem(STORAGE_KEY)
+
+if(!data) return
+
+let decoded=JSON.parse(data)
 
 decoded.pins.forEach(p=>{
+
+if(pinExists(p.lat,p.lng)) return
+
 L.marker([p.lat,p.lng],{icon:icons.House}).addTo(map)
+
 pins.push(p)
+
 })
 
 decoded.naps.forEach(n=>{
+
 L.marker([n.lat,n.lng],{icon:icons.NAP}).addTo(map)
+
 L.circle([n.lat,n.lng],{radius:n.radius,color:"red"}).addTo(map)
+
 naps.push(n)
+
 })
 
 updateNAPStats()
 
 }
 
-/* EXPORT KML */
+/* CLEAR */
 
-function exportKML(){
+function clearMap(){
 
-let kml='<?xml version="1.0"?><kml><Document>'
+localStorage.removeItem(STORAGE_KEY)
 
-pins.forEach(p=>{
-kml+=`
-<Placemark>
-<Point>
-<coordinates>${p.lng},${p.lat}</coordinates>
-</Point>
-</Placemark>`
-})
-
-kml+='</Document></kml>'
-
-let blob=new Blob([kml],{type:"text/xml"})
-
-let a=document.createElement("a")
-a.href=URL.createObjectURL(blob)
-a.download="fiber-map.kml"
-a.click()
+location.reload()
 
 }
 
-/* KMZ / EXCEL IMPORT */
+/* EXCEL IMPORT */
 
 document.getElementById("fileInput").addEventListener("change",async e=>{
-
-if(viewer) return
 
 let file=e.target.files[0]
 
 if(!file) return
-
-/* EXCEL */
 
 if(file.name.endsWith(".xlsx")||file.name.endsWith(".xls")){
 
@@ -352,16 +277,16 @@ rows.forEach(r=>{
 let lat=parseFloat(r.lat||r.latitude)
 let lng=parseFloat(r.lng||r.longitude)
 
-if(!isNaN(lat)&&!isNaN(lng)){
+if(isNaN(lat)||isNaN(lng)) return
+if(pinExists(lat,lng)) return
 
 L.marker([lat,lng],{icon:icons.House}).addTo(map)
 
 pins.push({lat,lng,type:"house"})
 
-}
-
 })
 
+saveMap()
 updateNAPStats()
 
 }
@@ -370,7 +295,7 @@ reader.readAsArrayBuffer(file)
 
 }
 
-/* KMZ */
+/* KMZ IMPORT */
 
 if(file.name.endsWith(".kmz")){
 
@@ -394,23 +319,27 @@ if(!coord) continue
 
 let [lng,lat]=coord.trim().split(",")
 
+lat=parseFloat(lat)
+lng=parseFloat(lng)
+
+if(pinExists(lat,lng)) continue
+
 L.marker([lat,lng],{icon:icons.House}).addTo(map)
 
 pins.push({lat,lng,type:"house"})
 
 }
 
+saveMap()
 updateNAPStats()
 
 }
 
 })
 
-/* VIEWER MODE */
+/* LOAD MAP */
 
-if(viewer){
-document.getElementById("fileInput").style.display="none"
-}
+loadMap()
 
 </script>
 
