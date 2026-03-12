@@ -2,53 +2,22 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Fiber Planner PRO+</title>
+<title>Fiber Planner Advanced</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-draw@1.0.4/dist/leaflet.draw.css">
-
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/supercluster@8.0.1/dist/supercluster.min.js"></script>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
 <style>
-
 body{margin:0;display:flex;height:100vh;font-family:Arial}
-
-#sidebar{
-width:330px;
-background:#0f172a;
-color:white;
-padding:10px;
-overflow:auto
-}
-
+#sidebar{width:320px;background:#0f172a;color:white;padding:10px;overflow:auto}
 #map{flex:1}
-
-button{
-width:100%;
-padding:8px;
-margin:4px 0;
-background:#0284c7;
-color:white;
-border:none
-}
-
-input,select{
-width:100%;
-padding:8px;
-margin-bottom:6px
-}
-
-.pin{
-border-bottom:1px solid #334155;
-padding:6px
-}
-
+button{width:100%;padding:8px;margin:4px 0;background:#0284c7;color:white;border:none}
+input{width:100%;padding:8px;margin-bottom:6px}
 </style>
 
 </head>
@@ -57,37 +26,15 @@ padding:6px
 
 <div id="sidebar">
 
-<h3>Fiber Planner PRO+</h3>
+<h3>Fiber Planner Advanced</h3>
 
 <input type="file" id="fileInput" accept=".xlsx,.xls,.kmz,.kml">
 
-<button onclick="generateShare()">Generate Share Link</button>
+<button onclick="enableRoute()">Auto Fiber Route</button>
+
+<button onclick="addCoverage()">NAP Coverage (200m)</button>
 
 <button onclick="exportKML()">Export KML</button>
-
-<button onclick="clearAll()">Clear Map</button>
-
-<hr>
-
-<select id="basemap">
-<option value="street">Street</option>
-<option value="satellite">Satellite</option>
-</select>
-
-<hr>
-
-<button onclick="enableRoute()">Draw Fiber Route</button>
-
-<hr>
-
-<h4>Layers</h4>
-<div id="layerList"></div>
-
-<hr>
-
-<input id="search" placeholder="Search pin">
-
-<div id="pinList"></div>
 
 </div>
 
@@ -95,45 +42,23 @@ padding:6px
 
 <script>
 
-/* ---------------- VIEWER MODE ---------------- */
-
-const params=new URLSearchParams(location.search)
-
-const viewer=params.get("viewer")==="1"
-
-/* ---------------- MAP ---------------- */
+/* MAP */
 
 let map=L.map("map",{preferCanvas:true}).setView([9.75,124.25],9)
 
-let street=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png")
+L.tileLayer(
+"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+).addTo(map)
 
-let satellite=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}")
-
-street.addTo(map)
-
-document.getElementById("basemap").onchange=function(){
-
-if(this.value==="satellite"){
-map.removeLayer(street)
-satellite.addTo(map)
-}else{
-map.removeLayer(satellite)
-street.addTo(map)
-}
-
-}
-
-/* ---------------- ICON COLORS ---------------- */
+/* ICONS */
 
 function icon(color){
-
 return L.icon({
 iconUrl:`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${color}.png`,
 shadowUrl:"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-shadow.png",
 iconSize:[25,41],
 iconAnchor:[12,41]
 })
-
 }
 
 const icons={
@@ -143,154 +68,140 @@ Backbone:icon("blue"),
 Manual:icon("green")
 }
 
-/* ---------------- LAYERS ---------------- */
+/* DATA */
 
-let layers={}
 let pins=[]
+let markers=[]
 
-function createLayer(name){
+/* SUPERCLUSTER */
 
-if(layers[name]) return
+let clusterIndex = new Supercluster({
+radius:60,
+maxZoom:20
+})
 
-let cluster=L.markerClusterGroup({chunkedLoading:true})
+function refreshClusters(){
 
-layers[name]=cluster
+let geo=pins.map(p=>({
+type:"Feature",
+geometry:{type:"Point",coordinates:[p.lng,p.lat]},
+properties:p
+}))
 
-map.addLayer(cluster)
+clusterIndex.load(geo)
 
-renderLayers()
-
-}
-
-function renderLayers(){
-
-let box=document.getElementById("layerList")
-
-box.innerHTML=""
-
-for(let l in layers){
-
-let div=document.createElement("div")
-
-div.innerHTML=`
-<input type="checkbox" checked onchange="toggleLayer('${l}',this.checked)">
-${l}
-`
-
-box.appendChild(div)
+renderClusters()
 
 }
 
+function renderClusters(){
+
+markers.forEach(m=>map.removeLayer(m))
+markers=[]
+
+let bounds=map.getBounds()
+
+let clusters=clusterIndex.getClusters([
+bounds.getWest(),
+bounds.getSouth(),
+bounds.getEast(),
+bounds.getNorth()
+], map.getZoom())
+
+clusters.forEach(c=>{
+
+let [lng,lat]=c.geometry.coordinates
+
+if(c.properties.cluster){
+
+let marker=L.marker([lat,lng]).addTo(map)
+
+marker.bindPopup("Cluster: "+c.properties.point_count)
+
+markers.push(marker)
+
+}else{
+
+let iconType=c.properties.layer||"Manual"
+
+let marker=L.marker([lat,lng],{icon:icons[iconType]}).addTo(map)
+
+marker.bindPopup(c.properties.name)
+
+markers.push(marker)
+
 }
-
-function toggleLayer(name,state){
-
-if(state) map.addLayer(layers[name])
-else map.removeLayer(layers[name])
-
-}
-
-/* ---------------- DUPLICATE CHECK ---------------- */
-
-function pinExists(lat,lng){
-
-return pins.some(p=>p.lat===lat && p.lng===lng)
-
-}
-
-/* ---------------- CREATE PIN ---------------- */
-
-function createPin(layer,name,lat,lng){
-
-if(isNaN(lat)||isNaN(lng)) return
-
-if(pinExists(lat,lng)) return
-
-createLayer(layer)
-
-let marker=L.marker([lat,lng],{icon:icons[layer]||icons.Manual})
-
-marker.bindPopup(`<b>${name}</b><br>${lat},${lng}`)
-
-layers[layer].addLayer(marker)
-
-pins.push({layer,name,lat,lng,marker})
-
-renderPins()
-
-}
-
-/* ---------------- RENDER PIN LIST ---------------- */
-
-function renderPins(){
-
-let list=document.getElementById("pinList")
-
-list.innerHTML=""
-
-pins.slice(0,200).forEach((p,i)=>{
-
-let div=document.createElement("div")
-
-div.className="pin"
-
-div.innerHTML=`
-<b>${p.name}</b><br>
-${p.lat}, ${p.lng}
-<button onclick="zoomPin(${i})">Zoom</button>
-`
-
-list.appendChild(div)
 
 })
 
 }
 
-function zoomPin(i){
+map.on("moveend",renderClusters)
 
-let p=pins[i]
+/* ADD PIN */
 
-map.setView([p.lat,p.lng],16)
+function addPin(layer,name,lat,lng){
 
-p.marker.openPopup()
+pins.push({layer,name,lat,lng})
+
+refreshClusters()
 
 }
 
-/* ---------------- DRAW ROUTE ---------------- */
+/* COVERAGE */
 
-let routeLayer=new L.FeatureGroup().addTo(map)
+function addCoverage(){
+
+map.once("click",e=>{
+
+L.circle(e.latlng,{
+radius:200,
+color:"green"
+}).addTo(map)
+
+})
+
+}
+
+/* AUTO ROUTE */
+
+let routePoints=[]
 
 function enableRoute(){
 
-let draw=new L.Draw.Polyline(map)
+routePoints=[]
 
-draw.enable()
+alert("Click start and end point")
 
-map.once("draw:created",function(e){
+map.once("click",start=>{
+routePoints.push(start.latlng)
 
-let layer=e.layer
+map.once("click",end=>{
+routePoints.push(end.latlng)
 
-routeLayer.addLayer(layer)
+let url=`https://router.project-osrm.org/route/v1/driving/${routePoints[0].lng},${routePoints[0].lat};${routePoints[1].lng},${routePoints[1].lat}?overview=full&geometries=geojson`
 
-let latlngs=layer.getLatLngs()
+fetch(url)
+.then(r=>r.json())
+.then(data=>{
 
-let dist=0
+let route=data.routes[0].geometry
 
-for(let i=1;i<latlngs.length;i++){
+L.geoJSON(route,{color:"orange"}).addTo(map)
 
-dist+=latlngs[i-1].distanceTo(latlngs[i])
+let dist=(data.routes[0].distance/1000).toFixed(2)
 
-}
+alert("Fiber distance: "+dist+" km")
 
-dist=(dist/1000).toFixed(2)
+})
 
-layer.bindPopup("Fiber distance: "+dist+" km").openPopup()
+})
 
 })
 
 }
 
-/* ---------------- FILE IMPORT ---------------- */
+/* KMZ / EXCEL IMPORT */
 
 document.getElementById("fileInput").addEventListener("change",async e=>{
 
@@ -298,45 +209,20 @@ let file=e.target.files[0]
 
 if(!file) return
 
-let layer=file.name
-
-if(file.name.endsWith(".xlsx")||file.name.endsWith(".xls"))
-parseExcel(file,layer)
-
-else if(file.name.endsWith(".kmz"))
-parseKMZ(file,layer)
-
-else if(file.name.endsWith(".kml"))
-parseKML(await file.text(),layer)
-
-})
-
-/* ---------------- EXCEL ---------------- */
-
-function parseExcel(file,layer){
+if(file.name.endsWith(".xlsx")||file.name.endsWith(".xls")){
 
 let reader=new FileReader()
 
 reader.onload=e=>{
 
-let data=new Uint8Array(e.target.result)
-
-let wb=XLSX.read(data,{type:"array"})
+let wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"})
 
 let sheet=wb.Sheets[wb.SheetNames[0]]
 
 let rows=XLSX.utils.sheet_to_json(sheet)
 
 rows.forEach(r=>{
-
-let name=r.name||r.Name||"Pin"
-
-let lat=parseFloat(r.latitude||r.lat||r.Lat)
-
-let lng=parseFloat(r.longitude||r.lng||r.Lng)
-
-createPin(layer,name,lat,lng)
-
+addPin("NAP",r.name||"Pin",parseFloat(r.lat),parseFloat(r.lng))
 })
 
 }
@@ -345,25 +231,15 @@ reader.readAsArrayBuffer(file)
 
 }
 
-/* ---------------- KMZ ---------------- */
-
-async function parseKMZ(file,layer){
+if(file.name.endsWith(".kmz")){
 
 let zip=await JSZip.loadAsync(file)
 
-let kml=null
+let kml
 
 zip.forEach((p,e)=>{if(p.endsWith(".kml"))kml=e})
 
 let text=await kml.async("text")
-
-parseKML(text,layer)
-
-}
-
-/* ---------------- KML ---------------- */
-
-function parseKML(text,layer){
 
 let xml=new DOMParser().parseFromString(text,"text/xml")
 
@@ -375,33 +251,30 @@ let name=p.getElementsByTagName("name")[0]?.textContent||"Pin"
 
 let coord=p.getElementsByTagName("coordinates")[0]?.textContent
 
-if(!coord) continue
-
 let [lng,lat]=coord.trim().split(",")
 
-createPin(layer,name,parseFloat(lat),parseFloat(lng))
+addPin("NAP",name,parseFloat(lat),parseFloat(lng))
 
 }
 
 }
 
-/* ---------------- EXPORT ---------------- */
+})
+
+/* EXPORT */
 
 function exportKML(){
 
 let kml='<?xml version="1.0"?><kml><Document>'
 
 pins.forEach(p=>{
-
 kml+=`
 <Placemark>
 <name>${p.name}</name>
 <Point>
 <coordinates>${p.lng},${p.lat},0</coordinates>
 </Point>
-</Placemark>
-`
-
+</Placemark>`
 })
 
 kml+='</Document></kml>'
@@ -415,53 +288,6 @@ a.href=URL.createObjectURL(blob)
 a.download="fiber-map.kml"
 
 a.click()
-
-}
-
-/* ---------------- SHARE LINK ---------------- */
-
-function generateShare(){
-
-let data=btoa(JSON.stringify(pins.map(p=>({
-layer:p.layer,
-name:p.name,
-lat:p.lat,
-lng:p.lng
-}))))
-
-let link=location.origin+location.pathname+"?viewer=1&data="+data
-
-prompt("Share this link:",link)
-
-}
-
-/* ---------------- LOAD SHARED MAP ---------------- */
-
-if(params.get("data")){
-
-let shared=JSON.parse(atob(params.get("data")))
-
-shared.forEach(p=>{
-
-createPin(p.layer,p.name,p.lat,p.lng)
-
-})
-
-}
-
-/* ---------------- RIGHT CLICK ADD ---------------- */
-
-if(!viewer){
-
-map.on("contextmenu",e=>{
-
-let name=prompt("Pin name")
-
-if(!name) return
-
-createPin("Manual",name,e.latlng.lat,e.latlng.lng)
-
-})
 
 }
 
