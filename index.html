@@ -2,10 +2,13 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Fiber Planner</title>
+<title>Fiber Planner Ultimate</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
 <style>
 
@@ -17,10 +20,10 @@ font-family:Arial;
 }
 
 #sidebar{
-width:340px;
+width:350px;
 background:#0f172a;
 color:white;
-padding:10px;
+padding:12px;
 overflow:auto;
 }
 
@@ -45,8 +48,6 @@ padding:8px;
 margin-bottom:6px;
 }
 
-/* Footer */
-
 #footer{
 position:fixed;
 bottom:0;
@@ -58,7 +59,11 @@ text-align:center;
 font-size:12px;
 padding:6px;
 border-top:1px solid #334155;
-z-index:999;
+}
+
+.warning{
+color:#ff4444;
+font-weight:bold;
 }
 
 </style>
@@ -70,17 +75,21 @@ z-index:999;
 
 <h3>Fiber Planner</h3>
 
+<input type="file" id="fileInput" accept=".xlsx,.xls,.kmz,.kml">
+
 <button onclick="generateShare()">Generate Share Link</button>
 
 <button onclick="addNAP()">Add NAP</button>
 
-<button onclick="addHouse()">Add House</button>
+<button onclick="enableRoute()">Auto Fiber Route</button>
 
 <button onclick="exportKML()">Export KML</button>
 
 <hr>
 
-<input id="shareLink" placeholder="Share link will appear here">
+<input id="shareLink" placeholder="Share link appears here">
+
+<div id="napStats"></div>
 
 </div>
 
@@ -92,30 +101,28 @@ Fiber Planner • By Randy Tadlas
 
 <script>
 
-/* ---------------- VIEWER MODE ---------------- */
+/* VIEWER MODE */
 
-const params = new URLSearchParams(window.location.search)
-const viewer = params.get("viewer") === "1"
+const params = new URLSearchParams(location.search)
+const viewer = params.get("viewer")==="1"
 
-/* ---------------- MAP ---------------- */
+/* MAP */
 
-let map = L.map("map").setView([9.75,124.25],9)
+let map=L.map("map",{preferCanvas:true}).setView([9.75,124.25],9)
 
 L.tileLayer(
 "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
 ).addTo(map)
 
-/* ---------------- ICONS ---------------- */
+/* ICONS */
 
 function icon(color){
-
 return L.icon({
 iconUrl:`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${color}.png`,
 shadowUrl:"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-shadow.png",
 iconSize:[25,41],
 iconAnchor:[12,41]
 })
-
 }
 
 const icons={
@@ -123,20 +130,18 @@ NAP:icon("red"),
 House:icon("green")
 }
 
-/* ---------------- DATA ---------------- */
+/* DATA */
 
 let pins=[]
 let naps=[]
 
-/* ---------------- ADD HOUSE ---------------- */
+/* ADD HOUSE */
 
-function addHouse(){
+map.on("contextmenu",e=>{
 
 if(viewer) return
 
-map.once("click",e=>{
-
-let marker = L.marker(e.latlng,{icon:icons.House}).addTo(map)
+let marker=L.marker(e.latlng,{icon:icons.House}).addTo(map)
 
 pins.push({
 type:"house",
@@ -144,11 +149,11 @@ lat:e.latlng.lat,
 lng:e.latlng.lng
 })
 
+updateNAPStats()
+
 })
 
-}
-
-/* ---------------- ADD NAP ---------------- */
+/* ADD NAP */
 
 function addNAP(){
 
@@ -156,25 +161,102 @@ if(viewer) return
 
 map.once("click",e=>{
 
-let marker = L.marker(e.latlng,{icon:icons.NAP}).addTo(map)
+let name=prompt("NAP Name","NAP")
 
-let circle = L.circle(e.latlng,{
+let cap=parseInt(prompt("Capacity (8 / 16 / 24 / 32)",16))
+
+let marker=L.marker(e.latlng,{icon:icons.NAP}).addTo(map)
+
+let circle=L.circle(e.latlng,{
 radius:200,
 color:"red"
 }).addTo(map)
 
 naps.push({
-type:"nap",
+name:name,
 lat:e.latlng.lat,
 lng:e.latlng.lng,
+capacity:cap,
 radius:200
+})
+
+updateNAPStats()
+
+})
+
+}
+
+/* NAP CAPACITY */
+
+function updateNAPStats(){
+
+let html=""
+
+naps.forEach(n=>{
+
+let count=0
+
+pins.forEach(p=>{
+
+let d=map.distance(
+[n.lat,n.lng],
+[p.lat,p.lng]
+)
+
+if(d<=n.radius) count++
+
+})
+
+let warn=count>=n.capacity
+? "<span class='warning'>⚠ FULL</span>"
+: ""
+
+html+=`
+<b>${n.name}</b><br>
+${count}/${n.capacity} ports ${warn}<br><br>
+`
+
+})
+
+document.getElementById("napStats").innerHTML=html
+
+}
+
+/* ROUTE */
+
+function enableRoute(){
+
+if(viewer) return
+
+alert("Click start then end")
+
+map.once("click",start=>{
+
+map.once("click",end=>{
+
+let url=`https://router.project-osrm.org/route/v1/driving/${start.latlng.lng},${start.latlng.lat};${end.latlng.lng},${end.latlng.lat}?overview=full&geometries=geojson`
+
+fetch(url)
+.then(r=>r.json())
+.then(data=>{
+
+let route=data.routes[0].geometry
+
+L.geoJSON(route,{color:"orange"}).addTo(map)
+
+let dist=(data.routes[0].distance/1000).toFixed(2)
+
+alert("Fiber distance "+dist+" km")
+
+})
+
 })
 
 })
 
 }
 
-/* ---------------- SHARE LINK ---------------- */
+/* SHARE LINK */
 
 function generateShare(){
 
@@ -183,36 +265,39 @@ pins:pins,
 naps:naps
 }
 
-let encoded = btoa(JSON.stringify(data))
+let encoded=btoa(JSON.stringify(data))
 
-let url =
-location.origin +
-location.pathname +
-"?viewer=1&data=" +
-encoded
+let url=
+location.origin+
+location.pathname+
+"?viewer=1&data="+encoded
 
 document.getElementById("shareLink").value=url
 
 }
 
-/* ---------------- LOAD SHARED MAP ---------------- */
+/* LOAD SHARED MAP */
 
 if(params.get("data")){
 
-let decoded = JSON.parse(atob(params.get("data")))
+let decoded=JSON.parse(atob(params.get("data")))
 
 decoded.pins.forEach(p=>{
 L.marker([p.lat,p.lng],{icon:icons.House}).addTo(map)
+pins.push(p)
 })
 
 decoded.naps.forEach(n=>{
 L.marker([n.lat,n.lng],{icon:icons.NAP}).addTo(map)
 L.circle([n.lat,n.lng],{radius:n.radius,color:"red"}).addTo(map)
+naps.push(n)
 })
+
+updateNAPStats()
 
 }
 
-/* ---------------- EXPORT KML ---------------- */
+/* EXPORT KML */
 
 function exportKML(){
 
@@ -232,13 +317,99 @@ kml+='</Document></kml>'
 let blob=new Blob([kml],{type:"text/xml"})
 
 let a=document.createElement("a")
-
 a.href=URL.createObjectURL(blob)
-
 a.download="fiber-map.kml"
-
 a.click()
 
+}
+
+/* KMZ / EXCEL IMPORT */
+
+document.getElementById("fileInput").addEventListener("change",async e=>{
+
+if(viewer) return
+
+let file=e.target.files[0]
+
+if(!file) return
+
+/* EXCEL */
+
+if(file.name.endsWith(".xlsx")||file.name.endsWith(".xls")){
+
+let reader=new FileReader()
+
+reader.onload=e=>{
+
+let wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"})
+
+let sheet=wb.Sheets[wb.SheetNames[0]]
+
+let rows=XLSX.utils.sheet_to_json(sheet)
+
+rows.forEach(r=>{
+
+let lat=parseFloat(r.lat||r.latitude)
+let lng=parseFloat(r.lng||r.longitude)
+
+if(!isNaN(lat)&&!isNaN(lng)){
+
+L.marker([lat,lng],{icon:icons.House}).addTo(map)
+
+pins.push({lat,lng,type:"house"})
+
+}
+
+})
+
+updateNAPStats()
+
+}
+
+reader.readAsArrayBuffer(file)
+
+}
+
+/* KMZ */
+
+if(file.name.endsWith(".kmz")){
+
+let zip=await JSZip.loadAsync(file)
+
+let kml
+
+zip.forEach((p,e)=>{if(p.endsWith(".kml"))kml=e})
+
+let text=await kml.async("text")
+
+let xml=new DOMParser().parseFromString(text,"text/xml")
+
+let pm=xml.getElementsByTagName("Placemark")
+
+for(let p of pm){
+
+let coord=p.getElementsByTagName("coordinates")[0]?.textContent
+
+if(!coord) continue
+
+let [lng,lat]=coord.trim().split(",")
+
+L.marker([lat,lng],{icon:icons.House}).addTo(map)
+
+pins.push({lat,lng,type:"house"})
+
+}
+
+updateNAPStats()
+
+}
+
+})
+
+/* VIEWER MODE */
+
+if(viewer){
+document.getElementById("fileInput").style.display="none"
 }
 
 </script>
