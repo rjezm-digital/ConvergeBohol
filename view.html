@@ -43,7 +43,9 @@ const params=new URLSearchParams(location.search)
 
 if(params.get("data")){
 
-let decoded=JSON.parse(atob(params.get("data")))
+let decoded=JSON.parse(
+atob(decodeURIComponent(params.get("data")))
+)
 
 let group=[]
 

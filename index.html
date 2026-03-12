@@ -14,7 +14,7 @@
 body{margin:0;display:flex;height:100vh;font-family:Arial}
 
 #sidebar{
-width:330px;
+width:320px;
 background:#0f172a;
 color:white;
 padding:12px;
@@ -51,7 +51,7 @@ font-size:12px;
 padding:6px
 }
 
-.warning{color:#ff4444;font-weight:bold}
+.warning{color:red;font-weight:bold}
 </style>
 </head>
 
@@ -157,7 +157,12 @@ radius:200,
 color:"red"
 }).addTo(map)
 
-naps.push({lat,lng,radius:200,capacity:16})
+naps.push({
+lat,
+lng,
+radius:200,
+capacity:16
+})
 
 save()
 updateNAP()
@@ -243,7 +248,9 @@ function generateShare(){
 
 let data={pins,naps}
 
-let encoded=btoa(JSON.stringify(data))
+let encoded=encodeURIComponent(
+btoa(JSON.stringify(data))
+)
 
 let url=
 location.origin+
@@ -375,5 +382,6 @@ updateNAP()
 })
 
 </script>
+
 </body>
 </html>
