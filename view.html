@@ -22,8 +22,11 @@ body{margin:0}
 let map=L.map("map").setView([9.75,124.25],9)
 
 L.tileLayer(
-"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+{maxZoom:19}
 ).addTo(map)
+
+/* icons */
 
 function icon(color){
 return L.icon({
@@ -39,22 +42,20 @@ house:icon("green"),
 nap:icon("red")
 }
 
-const params=new URLSearchParams(location.search)
+/* LOAD DATA FROM data.json */
 
-if(params.get("data")){
-
-let decoded=JSON.parse(
-atob(decodeURIComponent(params.get("data")))
-)
+fetch("data.json")
+.then(res=>res.json())
+.then(data=>{
 
 let group=[]
 
-decoded.pins.forEach(p=>{
+data.pins.forEach(p=>{
 let m=L.marker([p.lat,p.lng],{icon:icons.house}).addTo(map)
 group.push(m)
 })
 
-decoded.naps.forEach(n=>{
+data.naps.forEach(n=>{
 let m=L.marker([n.lat,n.lng],{icon:icons.nap}).addTo(map)
 L.circle([n.lat,n.lng],{radius:n.radius,color:"red"}).addTo(map)
 group.push(m)
@@ -65,7 +66,7 @@ let g=L.featureGroup(group)
 map.fitBounds(g.getBounds())
 }
 
-}
+})
 
 </script>
 
