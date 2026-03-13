@@ -14,13 +14,8 @@ href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
 <link rel="stylesheet"
 href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
 
-<link rel="stylesheet"
-href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
-
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
@@ -74,11 +69,6 @@ font-size:12px;
 padding:6px;
 }
 
-.warning{
-color:red;
-font-weight:bold;
-}
-
 </style>
 
 </head>
@@ -89,13 +79,10 @@ font-weight:bold;
 
 <h3>Fiber Planner</h3>
 
-<input id="coordSearch" placeholder="lat,lng">
-<button onclick="gotoCoord()">Go</button>
-
 <input type="file" id="fileInput" accept=".xlsx,.xls,.kmz">
 
 <button onclick="addNAP()">Add NAP</button>
-<button onclick="showNAPHeatmap()">Show Heatmap</button>
+<button onclick="showHeatmap()">Heatmap</button>
 <button onclick="exportJSON()">Export JSON</button>
 <button onclick="exportKML()">Export KML</button>
 <button onclick="clearMap()">Clear Map</button>
@@ -114,10 +101,6 @@ Fiber Planner • By Randy Tadlas
 
 <script>
 
-/* STORAGE */
-
-const STORAGE="fiberplanner"
-
 /* MAP */
 
 let map=L.map("map").setView([9.75,124.25],9)
@@ -127,7 +110,7 @@ let map=L.map("map").setView([9.75,124.25],9)
 let street=L.tileLayer(
 "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
 {maxZoom:20,subdomains:['mt0','mt1','mt2','mt3']}
-)
+).addTo(map)
 
 let satellite=L.tileLayer(
 "https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
@@ -139,41 +122,20 @@ let hybrid=L.tileLayer(
 {maxZoom:20,subdomains:['mt0','mt1','mt2','mt3']}
 )
 
-street.addTo(map)
-
 L.control.layers({
 Street:street,
 Satellite:satellite,
 Hybrid:hybrid
 }).addTo(map)
 
-/* CLUSTER ENGINE */
+/* CLUSTER */
 
 let cluster=L.markerClusterGroup({
-chunkedLoading:true
+chunkedLoading:true,
+spiderfyOnMaxZoom:true
 })
 
 map.addLayer(cluster)
-
-/* DRAW TOOL */
-
-let drawnItems=new L.FeatureGroup()
-map.addLayer(drawnItems)
-
-let drawControl=new L.Control.Draw({
-edit:{featureGroup:drawnItems},
-draw:{
-polygon:false,
-circle:false,
-marker:false
-}
-})
-
-map.addControl(drawControl)
-
-map.on(L.Draw.Event.CREATED,function(e){
-drawnItems.addLayer(e.layer)
-})
 
 /* ICONS */
 
@@ -183,8 +145,8 @@ iconUrl:
 "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-"+color+".png",
 shadowUrl:
 "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-shadow.png",
-iconSize:[25,41],
-iconAnchor:[12,41]
+iconSize:[30,45],
+iconAnchor:[15,45]
 })
 }
 
@@ -204,21 +166,6 @@ function pinExists(lat,lng){
 return pins.some(p=>p.lat===lat && p.lng===lng)
 }
 
-/* SEARCH COORDINATE */
-
-function gotoCoord(){
-
-let val=document.getElementById("coordSearch").value.split(",")
-
-let lat=parseFloat(val[0])
-let lng=parseFloat(val[1])
-
-map.setView([lat,lng],18)
-
-L.marker([lat,lng]).addTo(map)
-
-}
-
 /* RIGHT CLICK ADD HOUSE */
 
 map.on("contextmenu",function(e){
@@ -229,6 +176,11 @@ let lng=e.latlng.lng
 if(pinExists(lat,lng)) return
 
 let marker=L.marker([lat,lng],{icon:icons.house})
+
+marker.bindPopup(`
+<b>House</b><br>
+${lat},${lng}
+`)
 
 cluster.addLayer(marker)
 
@@ -254,11 +206,14 @@ let lng=e.latlng.lng
 
 let marker=L.marker([lat,lng],{icon:icons.nap})
 
+marker.bindPopup("<b>NAP</b>")
+
 cluster.addLayer(marker)
 
 L.circle([lat,lng],{
 radius:200,
-color:"red"
+color:"red",
+interactive:false
 }).addTo(map)
 
 naps.push({
@@ -276,154 +231,12 @@ updateNAP()
 
 }
 
-/* NAP CAPACITY */
-
-function updateNAP(){
-
-let html=""
-
-naps.forEach(n=>{
-
-let count=0
-
-pins.forEach(p=>{
-if(map.distance([n.lat,n.lng],[p.lat,p.lng])<=n.radius) count++
-})
-
-let percent=Math.round(count/n.capacity*100)
-
-let warn=count>=n.capacity
-? "<span class='warning'>FULL</span>"
-: ""
-
-html+=`NAP ${count}/${n.capacity} (${percent}%) ${warn}<br>`
-
-})
-
-document.getElementById("napStats").innerHTML=html
-
-}
-
-/* HEATMAP */
-
-function showNAPHeatmap(){
-
-let heat=[]
-
-pins.forEach(p=>{
-heat.push([p.lat,p.lng,1])
-})
-
-L.heatLayer(heat,{
-radius:40,
-blur:25
-}).addTo(map)
-
-}
-
-/* SAVE */
-
-function save(){
-localStorage.setItem(STORAGE,JSON.stringify({pins,naps}))
-}
-
-/* LOAD */
-
-function load(){
-
-let data=localStorage.getItem(STORAGE)
-
-if(!data) return
-
-let decoded=JSON.parse(data)
-
-decoded.pins.forEach(p=>{
-
-let m=L.marker([p.lat,p.lng],{icon:icons.house})
-cluster.addLayer(m)
-
-pins.push(p)
-
-})
-
-decoded.naps.forEach(n=>{
-
-let m=L.marker([n.lat,n.lng],{icon:icons.nap})
-cluster.addLayer(m)
-
-L.circle([n.lat,n.lng],{
-radius:n.radius,
-color:"red"
-}).addTo(map)
-
-naps.push(n)
-
-})
-
-updateNAP()
-
-}
-
-load()
-
-/* EXPORT JSON */
-
-function exportJSON(){
-
-let data={pins,naps}
-
-let blob=new Blob(
-[JSON.stringify(data,null,2)],
-{type:"application/json"}
-)
-
-let a=document.createElement("a")
-
-a.href=URL.createObjectURL(blob)
-a.download="data.json"
-a.click()
-
-}
-
-/* EXPORT KML */
-
-function exportKML(){
-
-let kml='<?xml version="1.0"?><kml><Document>'
-
-pins.forEach(p=>{
-kml+=`<Placemark>
-<name>${p.name}</name>
-<Point>
-<coordinates>${p.lng},${p.lat}</coordinates>
-</Point>
-</Placemark>`
-})
-
-kml+='</Document></kml>'
-
-let blob=new Blob([kml],{type:"text/xml"})
-
-let a=document.createElement("a")
-
-a.href=URL.createObjectURL(blob)
-a.download="fiber-map.kml"
-a.click()
-
-}
-
-/* CLEAR */
-
-function clearMap(){
-localStorage.removeItem(STORAGE)
-location.reload()
-}
-
-/* FILE IMPORT */
+/* KMZ + EXCEL IMPORT */
 
 document.getElementById("fileInput").addEventListener("change",async function(e){
 
 let file=e.target.files[0]
+
 if(!file) return
 
 /* KMZ */
@@ -459,9 +272,11 @@ lng=parseFloat(lng)
 
 if(pinExists(lat,lng)) continue
 
-let m=L.marker([lat,lng],{icon:icons.house})
+let marker=L.marker([lat,lng],{icon:icons.house})
 
-cluster.addLayer(m)
+marker.bindPopup(`<b>${name}</b>`)
+
+cluster.addLayer(marker)
 
 pins.push({
 name:name,
@@ -471,12 +286,209 @@ lng:lng
 
 }
 
+}
+
+/* EXCEL */
+
+if(file.name.endsWith(".xlsx") || file.name.endsWith(".xls")){
+
+let reader=new FileReader()
+
+reader.onload=function(e){
+
+let data=new Uint8Array(e.target.result)
+
+let wb=XLSX.read(data,{type:"array"})
+
+let sheet=wb.Sheets[wb.SheetNames[0]]
+
+let rows=XLSX.utils.sheet_to_json(sheet)
+
+rows.forEach(r=>{
+
+let lat=parseFloat(r.lat || r.latitude)
+let lng=parseFloat(r.lng || r.longitude)
+
+let name=r.name || "House"
+
+if(isNaN(lat) || isNaN(lng)) return
+
+if(pinExists(lat,lng)) return
+
+let marker=L.marker([lat,lng],{icon:icons.house})
+
+marker.bindPopup(`<b>${name}</b>`)
+
+cluster.addLayer(marker)
+
+pins.push({
+name:name,
+lat:lat,
+lng:lng
+})
+
+})
+
+}
+
+reader.readAsArrayBuffer(file)
+
+}
+
 save()
+updateNAP()
+
+})
+
+/* HEATMAP */
+
+function showHeatmap(){
+
+let heat=[]
+
+pins.forEach(p=>{
+heat.push([p.lat,p.lng,1])
+})
+
+L.heatLayer(heat,{
+radius:40,
+blur:25
+}).addTo(map)
+
+}
+
+/* NAP CAPACITY */
+
+function updateNAP(){
+
+let html=""
+
+naps.forEach(n=>{
+
+let count=0
+
+pins.forEach(p=>{
+if(map.distance([n.lat,n.lng],[p.lat,p.lng])<=n.radius)
+count++
+})
+
+html+=`NAP ${count}/${n.capacity}<br>`
+
+})
+
+document.getElementById("napStats").innerHTML=html
+
+}
+
+/* SAVE */
+
+function save(){
+localStorage.setItem("fiberplanner",JSON.stringify({pins,naps}))
+}
+
+/* LOAD */
+
+function load(){
+
+let data=localStorage.getItem("fiberplanner")
+
+if(!data) return
+
+let decoded=JSON.parse(data)
+
+decoded.pins.forEach(p=>{
+
+let marker=L.marker([p.lat,p.lng],{icon:icons.house})
+
+marker.bindPopup(`<b>${p.name}</b>`)
+
+cluster.addLayer(marker)
+
+pins.push(p)
+
+})
+
+decoded.naps.forEach(n=>{
+
+let marker=L.marker([n.lat,n.lng],{icon:icons.nap})
+
+cluster.addLayer(marker)
+
+L.circle([n.lat,n.lng],{
+radius:n.radius,
+color:"red",
+interactive:false
+}).addTo(map)
+
+naps.push(n)
+
+})
+
 updateNAP()
 
 }
 
+load()
+
+/* EXPORT JSON */
+
+function exportJSON(){
+
+let blob=new Blob(
+[JSON.stringify({pins,naps},null,2)],
+{type:"application/json"}
+)
+
+let a=document.createElement("a")
+
+a.href=URL.createObjectURL(blob)
+
+a.download="data.json"
+
+a.click()
+
+}
+
+/* EXPORT KML */
+
+function exportKML(){
+
+let kml='<?xml version="1.0"?><kml><Document>'
+
+pins.forEach(p=>{
+kml+=`
+<Placemark>
+<name>${p.name}</name>
+<Point>
+<coordinates>${p.lng},${p.lat}</coordinates>
+</Point>
+</Placemark>
+`
 })
+
+kml+='</Document></kml>'
+
+let blob=new Blob([kml],{type:"text/xml"})
+
+let a=document.createElement("a")
+
+a.href=URL.createObjectURL(blob)
+
+a.download="fiber-map.kml"
+
+a.click()
+
+}
+
+/* CLEAR */
+
+function clearMap(){
+
+localStorage.removeItem("fiberplanner")
+
+location.reload()
+
+}
 
 </script>
 
