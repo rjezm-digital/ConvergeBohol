@@ -101,10 +101,17 @@ Satellite:satellite,
 Hybrid:hybrid
 }).addTo(map)
 
-/* CLUSTERS */
+/* CLUSTER LAYERS */
 
-let houseLayer=L.markerClusterGroup({chunkedLoading:true})
-let napLayer=L.markerClusterGroup({chunkedLoading:true})
+let houseLayer=L.markerClusterGroup({
+chunkedLoading:true,
+spiderfyOnMaxZoom:true
+})
+
+let napLayer=L.markerClusterGroup({
+chunkedLoading:true,
+spiderfyOnMaxZoom:true
+})
 
 map.addLayer(houseLayer)
 map.addLayer(napLayer)
@@ -121,8 +128,8 @@ iconUrl:
 "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-"+color+".png",
 shadowUrl:
 "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-shadow.png",
-iconSize:[25,41],
-iconAnchor:[12,41]
+iconSize:[30,45],
+iconAnchor:[15,45]
 })
 }
 
@@ -159,14 +166,13 @@ Navigate
 `)
 
 houseLayer.addLayer(marker)
-
 group.push(marker)
 
 heat.push([p.lat,p.lng,1])
 
 })
 
-/* NAP */
+/* NAP PINS */
 
 data.naps.forEach(n=>{
 
@@ -185,13 +191,15 @@ Navigate
 `)
 
 napLayer.addLayer(marker)
+group.push(marker)
+
+/* COVERAGE CIRCLE (non-clickable fix) */
 
 L.circle([n.lat,n.lng],{
 radius:n.radius,
-color:"red"
+color:"red",
+interactive:false
 }).addTo(map)
-
-group.push(marker)
 
 })
 
@@ -207,28 +215,39 @@ blur:25
 if(group.length){
 
 let g=L.featureGroup(group)
-
 map.fitBounds(g.getBounds())
 
 }
 
 })
 
-/* TOGGLES */
+/* LAYER TOGGLES */
 
 function toggleHouses(){
-if(map.hasLayer(houseLayer)) map.removeLayer(houseLayer)
-else map.addLayer(houseLayer)
+
+if(map.hasLayer(houseLayer))
+map.removeLayer(houseLayer)
+else
+map.addLayer(houseLayer)
+
 }
 
 function toggleNAP(){
-if(map.hasLayer(napLayer)) map.removeLayer(napLayer)
-else map.addLayer(napLayer)
+
+if(map.hasLayer(napLayer))
+map.removeLayer(napLayer)
+else
+map.addLayer(napLayer)
+
 }
 
 function toggleHeat(){
-if(map.hasLayer(heatLayer)) map.removeLayer(heatLayer)
-else map.addLayer(heatLayer)
+
+if(map.hasLayer(heatLayer))
+map.removeLayer(heatLayer)
+else
+map.addLayer(heatLayer)
+
 }
 
 /* DISTANCE TOOL */
@@ -237,8 +256,10 @@ let measuring=false
 let lastPoint=null
 
 function startMeasure(){
+
 measuring=true
 alert("Click two points to measure distance")
+
 }
 
 map.on("click",function(e){
@@ -253,7 +274,8 @@ lastPoint=e.latlng
 
 let dist=map.distance(lastPoint,e.latlng)
 
-L.polyline([lastPoint,e.latlng],{color:"blue"}).addTo(map)
+L.polyline([lastPoint,e.latlng],
+{color:"blue"}).addTo(map)
 
 L.popup()
 .setLatLng(e.latlng)
