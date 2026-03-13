@@ -1,25 +1,30 @@
 <!DOCTYPE html>
 <html>
 <head>
+
 <meta charset="utf-8">
-<title>Fiber Map Viewer</title>
-
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<title>Fiber Map Viewer Pro</title>
 
 <link rel="stylesheet"
-href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 
 <link rel="stylesheet"
-href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+
 <style>
 
 body{
 margin:0;
+font-family:Arial;
 }
 
 #map{
@@ -27,10 +32,42 @@ height:100vh;
 width:100%;
 }
 
+#toolbar{
+position:absolute;
+top:10px;
+left:10px;
+z-index:999;
+background:white;
+padding:10px;
+border-radius:8px;
+box-shadow:0 2px 10px rgba(0,0,0,0.2);
+}
+
+button{
+display:block;
+margin:4px 0;
+padding:6px 10px;
+border:none;
+background:#0284c7;
+color:white;
+cursor:pointer;
+border-radius:4px;
+}
+
 </style>
+
 </head>
 
 <body>
+
+<div id="toolbar">
+
+<button onclick="toggleHouses()">Toggle Houses</button>
+<button onclick="toggleNAP()">Toggle NAP</button>
+<button onclick="toggleHeat()">Toggle Heatmap</button>
+<button onclick="startMeasure()">Measure Distance</button>
+
+</div>
 
 <div id="map"></div>
 
@@ -44,37 +81,43 @@ let map=L.map("map").setView([9.75,124.25],9)
 
 let street=L.tileLayer(
 "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
-{
-maxZoom:20,
-subdomains:['mt0','mt1','mt2','mt3']
-}
+{maxZoom:20,subdomains:['mt0','mt1','mt2','mt3']}
 )
 
 let satellite=L.tileLayer(
 "https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-{
-maxZoom:20,
-subdomains:['mt0','mt1','mt2','mt3']
-}
+{maxZoom:20,subdomains:['mt0','mt1','mt2','mt3']}
+)
+
+let hybrid=L.tileLayer(
+"https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+{maxZoom:20,subdomains:['mt0','mt1','mt2','mt3']}
 )
 
 street.addTo(map)
 
-L.control.layers(
-{
+L.control.layers({
 Street:street,
-Satellite:satellite
+Satellite:satellite,
+Hybrid:hybrid
 }).addTo(map)
 
 /* CLUSTER ENGINE */
 
-let cluster=L.markerClusterGroup({
-chunkedLoading:true,
-chunkInterval:200,
-chunkDelay:50
+let houseLayer=L.markerClusterGroup({
+chunkedLoading:true
 })
 
-map.addLayer(cluster)
+let napLayer=L.markerClusterGroup({
+chunkedLoading:true
+})
+
+map.addLayer(houseLayer)
+map.addLayer(napLayer)
+
+/* HEATMAP */
+
+let heatLayer
 
 /* ICONS */
 
@@ -94,28 +137,13 @@ house:icon("green"),
 nap:icon("red")
 }
 
-/* SHOW COORDINATES */
-
-map.on("contextmenu",function(e){
-
-let lat=e.latlng.lat.toFixed(6)
-let lng=e.latlng.lng.toFixed(6)
-
-L.popup()
-.setLatLng(e.latlng)
-.setContent(
-"Lat: "+lat+"<br>Lng: "+lng
-)
-.openOn(map)
-
-})
-
 /* LOAD DATA */
 
 fetch("data.json")
-.then(res=>res.json())
+.then(r=>r.json())
 .then(data=>{
 
+let heat=[]
 let group=[]
 
 /* HOUSE PINS */
@@ -127,9 +155,21 @@ let marker=L.marker(
 {icon:icons.house}
 )
 
-cluster.addLayer(marker)
+marker.bindPopup(`
+<b>House</b><br>
+Lat:${p.lat}<br>
+Lng:${p.lng}<br>
+<a target="_blank"
+href="https://www.google.com/maps?q=${p.lat},${p.lng}">
+Navigate
+</a>
+`)
+
+houseLayer.addLayer(marker)
 
 group.push(marker)
+
+heat.push([p.lat,p.lng,1])
 
 })
 
@@ -142,29 +182,148 @@ let marker=L.marker(
 {icon:icons.nap}
 )
 
-cluster.addLayer(marker)
+marker.bindPopup(`
+<b>NAP</b><br>
+Lat:${n.lat}<br>
+Lng:${n.lng}<br>
+<a target="_blank"
+href="https://www.google.com/maps?q=${n.lat},${n.lng}">
+Navigate
+</a>
+`)
+
+napLayer.addLayer(marker)
 
 L.circle(
 [n.lat,n.lng],
 {
 radius:n.radius,
 color:"red"
-}
-).addTo(map)
+}).addTo(map)
 
 group.push(marker)
 
 })
 
+/* HEATMAP */
+
+heatLayer=L.heatLayer(heat,{
+radius:40,
+blur:25
+})
+
 /* AUTO ZOOM */
 
 if(group.length){
-
 let g=L.featureGroup(group)
-
 map.fitBounds(g.getBounds())
+}
+
+})
+
+/* ROAD HIGHLIGHT */
+
+fetch("https://overpass-api.de/api/interpreter?data=[out:json];way[highway](9.5,123.6,9.9,124.5);out geom;")
+.then(r=>r.json())
+.then(data=>{
+
+data.elements.forEach(road=>{
+
+let coords=road.geometry.map(p=>[p.lat,p.lon])
+
+L.polyline(coords,{
+color:"yellow",
+weight:2,
+opacity:0.5
+}).addTo(map)
+
+})
+
+})
+
+/* LAYER TOGGLES */
+
+function toggleHouses(){
+
+if(map.hasLayer(houseLayer))
+map.removeLayer(houseLayer)
+else
+map.addLayer(houseLayer)
 
 }
+
+function toggleNAP(){
+
+if(map.hasLayer(napLayer))
+map.removeLayer(napLayer)
+else
+map.addLayer(napLayer)
+
+}
+
+function toggleHeat(){
+
+if(map.hasLayer(heatLayer))
+map.removeLayer(heatLayer)
+else
+map.addLayer(heatLayer)
+
+}
+
+/* DISTANCE TOOL */
+
+let measuring=false
+let lastPoint=null
+
+function startMeasure(){
+measuring=true
+alert("Click two points to measure distance")
+}
+
+map.on("click",function(e){
+
+if(!measuring) return
+
+if(!lastPoint){
+
+lastPoint=e.latlng
+
+}else{
+
+let dist=map.distance(lastPoint,e.latlng)
+
+L.polyline([lastPoint,e.latlng],
+{color:"blue"}).addTo(map)
+
+L.popup()
+.setLatLng(e.latlng)
+.setContent("Distance: "+dist.toFixed(1)+" meters")
+.openOn(map)
+
+lastPoint=null
+measuring=false
+
+}
+
+})
+
+/* COPY COORDINATES */
+
+map.on("contextmenu",function(e){
+
+let lat=e.latlng.lat.toFixed(6)
+let lng=e.latlng.lng.toFixed(6)
+
+L.popup()
+.setLatLng(e.latlng)
+.setContent(`
+Lat:${lat}<br>
+Lng:${lng}<br>
+<button onclick="navigator.clipboard.writeText('${lat},${lng}')">
+Copy
+</button>
+`)
+.openOn(map)
 
 })
 
