@@ -1,13 +1,21 @@
 <!DOCTYPE html>
 <html>
 <head>
+
 <meta charset="utf-8">
 <title>Fiber Planner</title>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+<link rel="stylesheet"
+href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
@@ -15,19 +23,28 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
 
 <style>
-body{margin:0;display:flex;height:100vh;font-family:Arial}
+
+body{
+margin:0;
+display:flex;
+height:100vh;
+font-family:Arial;
+}
 
 #sidebar{
 width:320px;
 background:#0f172a;
 color:white;
 padding:12px;
-overflow:auto
+overflow:auto;
 }
 
-#map{flex:1}
+#map{
+flex:1;
+}
 
 button{
 width:100%;
@@ -36,13 +53,13 @@ margin:4px 0;
 background:#0284c7;
 color:white;
 border:none;
-cursor:pointer
+cursor:pointer;
 }
 
 input{
 width:100%;
 padding:8px;
-margin-bottom:6px
+margin-bottom:6px;
 }
 
 #footer{
@@ -54,10 +71,14 @@ background:#0f172a;
 color:#94a3b8;
 text-align:center;
 font-size:12px;
-padding:6px
+padding:6px;
 }
 
-.warning{color:red;font-weight:bold}
+.warning{
+color:red;
+font-weight:bold;
+}
+
 </style>
 
 </head>
@@ -74,6 +95,7 @@ padding:6px
 <input type="file" id="fileInput" accept=".xlsx,.xls,.kmz">
 
 <button onclick="addNAP()">Add NAP</button>
+<button onclick="showNAPHeatmap()">Show Heatmap</button>
 <button onclick="exportJSON()">Export JSON</button>
 <button onclick="exportKML()">Export KML</button>
 <button onclick="clearMap()">Clear Map</button>
@@ -100,7 +122,7 @@ const STORAGE="fiberplanner"
 
 let map=L.map("map").setView([9.75,124.25],9)
 
-/* MAP LAYERS */
+/* GOOGLE MAP */
 
 let street=L.tileLayer(
 "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
@@ -112,18 +134,23 @@ let satellite=L.tileLayer(
 {maxZoom:20,subdomains:['mt0','mt1','mt2','mt3']}
 )
 
+let hybrid=L.tileLayer(
+"https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+{maxZoom:20,subdomains:['mt0','mt1','mt2','mt3']}
+)
+
 street.addTo(map)
 
-L.control.layers(
-{Street:street,Satellite:satellite}
-).addTo(map)
+L.control.layers({
+Street:street,
+Satellite:satellite,
+Hybrid:hybrid
+}).addTo(map)
 
 /* CLUSTER ENGINE */
 
 let cluster=L.markerClusterGroup({
-chunkedLoading:true,
-chunkInterval:200,
-chunkDelay:50
+chunkedLoading:true
 })
 
 map.addLayer(cluster)
@@ -177,13 +204,11 @@ function pinExists(lat,lng){
 return pins.some(p=>p.lat===lat && p.lng===lng)
 }
 
-/* COORD SEARCH */
+/* SEARCH COORDINATE */
 
 function gotoCoord(){
 
-let val=document
-.getElementById("coordSearch")
-.value.split(",")
+let val=document.getElementById("coordSearch").value.split(",")
 
 let lat=parseFloat(val[0])
 let lng=parseFloat(val[1])
@@ -194,17 +219,12 @@ L.marker([lat,lng]).addTo(map)
 
 }
 
-/* LONG PRESS COORDINATES + HOUSE PIN */
+/* RIGHT CLICK ADD HOUSE */
 
 map.on("contextmenu",function(e){
 
 let lat=e.latlng.lat
 let lng=e.latlng.lng
-
-L.popup()
-.setLatLng(e.latlng)
-.setContent("Lat: "+lat+"<br>Lng: "+lng)
-.openOn(map)
 
 if(pinExists(lat,lng)) return
 
@@ -212,7 +232,11 @@ let marker=L.marker([lat,lng],{icon:icons.house})
 
 cluster.addLayer(marker)
 
-pins.push({lat,lng})
+pins.push({
+name:"House",
+lat:lat,
+lng:lng
+})
 
 save()
 updateNAP()
@@ -238,8 +262,9 @@ color:"red"
 }).addTo(map)
 
 naps.push({
-lat,
-lng,
+name:"NAP",
+lat:lat,
+lng:lng,
 radius:200,
 capacity:16
 })
@@ -262,11 +287,7 @@ naps.forEach(n=>{
 let count=0
 
 pins.forEach(p=>{
-
-let d=map.distance([n.lat,n.lng],[p.lat,p.lng])
-
-if(d<=n.radius) count++
-
+if(map.distance([n.lat,n.lng],[p.lat,p.lng])<=n.radius) count++
 })
 
 let percent=Math.round(count/n.capacity*100)
@@ -275,11 +296,7 @@ let warn=count>=n.capacity
 ? "<span class='warning'>FULL</span>"
 : ""
 
-html+=`
-NAP ${count}/${n.capacity}
-(${percent}%) ${warn}
-<br>
-`
+html+=`NAP ${count}/${n.capacity} (${percent}%) ${warn}<br>`
 
 })
 
@@ -287,15 +304,27 @@ document.getElementById("napStats").innerHTML=html
 
 }
 
+/* HEATMAP */
+
+function showNAPHeatmap(){
+
+let heat=[]
+
+pins.forEach(p=>{
+heat.push([p.lat,p.lng,1])
+})
+
+L.heatLayer(heat,{
+radius:40,
+blur:25
+}).addTo(map)
+
+}
+
 /* SAVE */
 
 function save(){
-
-localStorage.setItem(
-STORAGE,
-JSON.stringify({pins,naps})
-)
-
+localStorage.setItem(STORAGE,JSON.stringify({pins,naps}))
 }
 
 /* LOAD */
@@ -311,7 +340,6 @@ let decoded=JSON.parse(data)
 decoded.pins.forEach(p=>{
 
 let m=L.marker([p.lat,p.lng],{icon:icons.house})
-
 cluster.addLayer(m)
 
 pins.push(p)
@@ -321,7 +349,6 @@ pins.push(p)
 decoded.naps.forEach(n=>{
 
 let m=L.marker([n.lat,n.lng],{icon:icons.nap})
-
 cluster.addLayer(m)
 
 L.circle([n.lat,n.lng],{
@@ -365,8 +392,8 @@ function exportKML(){
 let kml='<?xml version="1.0"?><kml><Document>'
 
 pins.forEach(p=>{
-kml+=`
-<Placemark>
+kml+=`<Placemark>
+<name>${p.name}</name>
 <Point>
 <coordinates>${p.lng},${p.lat}</coordinates>
 </Point>
@@ -388,63 +415,16 @@ a.click()
 /* CLEAR */
 
 function clearMap(){
-
 localStorage.removeItem(STORAGE)
-
 location.reload()
-
 }
 
 /* FILE IMPORT */
 
-document.getElementById("fileInput").addEventListener(
-"change",
-async function(e){
+document.getElementById("fileInput").addEventListener("change",async function(e){
 
 let file=e.target.files[0]
 if(!file) return
-
-/* EXCEL */
-
-if(file.name.endsWith(".xlsx")||file.name.endsWith(".xls")){
-
-let reader=new FileReader()
-
-reader.onload=function(e){
-
-let wb=XLSX.read(
-new Uint8Array(e.target.result),
-{type:"array"}
-)
-
-let sheet=wb.Sheets[wb.SheetNames[0]]
-
-let rows=XLSX.utils.sheet_to_json(sheet)
-
-rows.forEach(r=>{
-
-let lat=parseFloat(r.lat||r.latitude)
-let lng=parseFloat(r.lng||r.longitude)
-
-if(isNaN(lat)||isNaN(lng)) return
-if(pinExists(lat,lng)) return
-
-let m=L.marker([lat,lng],{icon:icons.house})
-
-cluster.addLayer(m)
-
-pins.push({lat,lng})
-
-})
-
-save()
-updateNAP()
-
-}
-
-reader.readAsArrayBuffer(file)
-
-}
 
 /* KMZ */
 
@@ -466,6 +446,8 @@ let pm=xml.getElementsByTagName("Placemark")
 
 for(let p of pm){
 
+let name=p.getElementsByTagName("name")[0]?.textContent || "House"
+
 let coord=p.getElementsByTagName("coordinates")[0]?.textContent
 
 if(!coord) continue
@@ -481,7 +463,11 @@ let m=L.marker([lat,lng],{icon:icons.house})
 
 cluster.addLayer(m)
 
-pins.push({lat,lng})
+pins.push({
+name:name,
+lat:lat,
+lng:lng
+})
 
 }
 
