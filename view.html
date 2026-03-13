@@ -5,11 +5,28 @@
 <title>Fiber Map Viewer</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
 <style>
-body{margin:0}
-#map{height:100vh;width:100%}
+
+body{
+margin:0;
+}
+
+#map{
+height:100vh;
+width:100%;
+}
+
 </style>
 </head>
 
@@ -19,19 +36,54 @@ body{margin:0}
 
 <script>
 
+/* MAP */
+
 let map=L.map("map").setView([9.75,124.25],9)
 
-L.tileLayer(
-"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-{maxZoom:19}
-).addTo(map)
+/* GOOGLE MAP LAYERS */
 
-/* icons */
+let street=L.tileLayer(
+"https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+{
+maxZoom:20,
+subdomains:['mt0','mt1','mt2','mt3']
+}
+)
+
+let satellite=L.tileLayer(
+"https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+{
+maxZoom:20,
+subdomains:['mt0','mt1','mt2','mt3']
+}
+)
+
+street.addTo(map)
+
+L.control.layers(
+{
+Street:street,
+Satellite:satellite
+}).addTo(map)
+
+/* CLUSTER ENGINE */
+
+let cluster=L.markerClusterGroup({
+chunkedLoading:true,
+chunkInterval:200,
+chunkDelay:50
+})
+
+map.addLayer(cluster)
+
+/* ICONS */
 
 function icon(color){
 return L.icon({
-iconUrl:`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${color}.png`,
-shadowUrl:"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-shadow.png",
+iconUrl:
+"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-"+color+".png",
+shadowUrl:
+"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-shadow.png",
 iconSize:[25,41],
 iconAnchor:[12,41]
 })
@@ -42,7 +94,23 @@ house:icon("green"),
 nap:icon("red")
 }
 
-/* LOAD DATA FROM data.json */
+/* SHOW COORDINATES */
+
+map.on("contextmenu",function(e){
+
+let lat=e.latlng.lat.toFixed(6)
+let lng=e.latlng.lng.toFixed(6)
+
+L.popup()
+.setLatLng(e.latlng)
+.setContent(
+"Lat: "+lat+"<br>Lng: "+lng
+)
+.openOn(map)
+
+})
+
+/* LOAD DATA */
 
 fetch("data.json")
 .then(res=>res.json())
@@ -50,20 +118,52 @@ fetch("data.json")
 
 let group=[]
 
+/* HOUSE PINS */
+
 data.pins.forEach(p=>{
-let m=L.marker([p.lat,p.lng],{icon:icons.house}).addTo(map)
-group.push(m)
+
+let marker=L.marker(
+[p.lat,p.lng],
+{icon:icons.house}
+)
+
+cluster.addLayer(marker)
+
+group.push(marker)
+
 })
+
+/* NAP PINS */
 
 data.naps.forEach(n=>{
-let m=L.marker([n.lat,n.lng],{icon:icons.nap}).addTo(map)
-L.circle([n.lat,n.lng],{radius:n.radius,color:"red"}).addTo(map)
-group.push(m)
+
+let marker=L.marker(
+[n.lat,n.lng],
+{icon:icons.nap}
+)
+
+cluster.addLayer(marker)
+
+L.circle(
+[n.lat,n.lng],
+{
+radius:n.radius,
+color:"red"
+}
+).addTo(map)
+
+group.push(marker)
+
 })
 
+/* AUTO ZOOM */
+
 if(group.length){
+
 let g=L.featureGroup(group)
+
 map.fitBounds(g.getBounds())
+
 }
 
 })
